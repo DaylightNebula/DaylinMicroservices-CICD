@@ -66,7 +66,6 @@ fun runBuild(config: JSONObject) {
     if (cloneResult != 0) throw Exception("Clone operation failed, URL: ${config.getString("url")}, exit code: $cloneResult")
 
     // run each command, verifying after each
-    println("Files ${buildFolder.listFiles()?.map { it.name }}")
     for (any in (config.optJSONArray("commands") ?: throw IllegalArgumentException("Commands to build must be specified"))) {
         val command = any as? String ?: throw IllegalArgumentException("Commands must be a string")
         val cmdResult = runCommand(buildFolder, command)
@@ -79,7 +78,7 @@ fun runBuild(config: JSONObject) {
 
 // function that runs the given command
 fun runCommand(target: File, command: String) =
-    ProcessBuilder(command)
+    ProcessBuilder("cmd.exe", "/c", command)
         .directory(target)
         .redirectOutput(ProcessBuilder.Redirect.INHERIT)
         .redirectError(ProcessBuilder.Redirect.INHERIT)
