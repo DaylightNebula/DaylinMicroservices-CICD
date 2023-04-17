@@ -3,3 +3,4 @@
 
 *.iml
 /jenkins/
+/builder_test_dir/
