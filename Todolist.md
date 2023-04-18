@@ -1,21 +1,19 @@
 # CICD-Builder
 - The job of this service is to pull and then compile a project from a git repository
-- [ ] Option: Url to pull from (if files:// is given, load file from that path, or if servicefs:// is given, load from file system)
-- [ ] Option: Command(s) to run build
-- [ ] Option: Auth token
-- [ ] Option: Path (or list of paths) to builds locally "resources"
+- [x] Option: Url to pull from
+- [x] Option: Command(s) to run build
+- [x] Option: Path (or list of paths) to builds locally "resources"
 - [x] Option: Local config path
-- [ ] Option: Run build on startup
+- [x] Option: Run build on startup
   - [x] If set true, run build on startup
-  - [ ] If set false, broadcast that the builder is ready
-- [ ] Endpoint: Run build (with options above and a random key from the manager)
-  - [ ] Send back a packet saying accepted
-  - [ ] If a build has already been triggered, send back a packet saying busy
-- [ ] On build complete
-  - [ ] Copy results into service file system named with the name of the jar plus the time stamp
-  - [ ] Update builds metadata file on build (mark build as good initially)
-  - [ ] A build may only be pushed to the file system if all commands pass without errors
-  - [ ] Broadcast build success or fail with that key
+  - [x] If set false, broadcast that the builder is ready
+- [x] Endpoint: Run build (with options above and a random key from the manager)
+  - [x] Send back a packet saying accepted
+  - [x] If a build has already been triggered, send back a packet saying busy
+- [x] On build complete
+  - [x] Zip resources
+  - [x] A build may only be pushed to the file system if all commands pass without errors
+  - [x] Broadcast build success or fail with zip file
 
 # CICD-Runner
 - The job of this service is to pull builds from the service file system and run those builds

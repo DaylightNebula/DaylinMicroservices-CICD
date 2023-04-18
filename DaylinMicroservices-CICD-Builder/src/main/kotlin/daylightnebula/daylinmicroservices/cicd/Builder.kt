@@ -5,30 +5,42 @@ import daylightnebula.daylinmicroservices.MicroserviceConfig
 import daylightnebula.daylinmicroservices.filesysteminterface.HashUtils
 import daylightnebula.daylinmicroservices.filesysteminterface.pushFile
 import daylightnebula.daylinmicroservices.filesysteminterface.requestFile
+import daylightnebula.daylinmicroservices.requests.broadcastRequestByTag
 import daylightnebula.daylinmicroservices.requests.request
+import mu.KotlinLogging
 import okhttp3.internal.wait
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.lang.Exception
 import java.lang.IllegalArgumentException
 import java.lang.Thread.sleep
 import java.security.MessageDigest
 import java.util.*
+import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.collections.HashMap
 import kotlin.concurrent.thread
 import kotlin.random.Random
-
-val endpoints = hashMapOf<String, (json: JSONObject) -> JSONObject>(
-    "run_build" to { json ->
-        TODO("Implement run build endpoint")
-    }
-)
-lateinit var service: Microservice
 
 // control variables
 var buildConfig: JSONObject? = null
 var buildUUID = UUID.randomUUID()
 val startTime = System.currentTimeMillis()
+
+val endpoints = hashMapOf<String, (json: JSONObject) -> JSONObject>(
+    "run_build" to { json ->
+        if (buildConfig == null) {
+            buildConfig = json.getJSONObject("config")
+            buildUUID = UUID.fromString(json.getString("buildID"))
+            JSONObject().put("build_accepted", true)
+        } else JSONObject().put("build_accepted", false)
+    }
+)
+val logger = KotlinLogging.logger("CICD-Builder")
+val config = MicroserviceConfig(name = "CICD-Builder", tags = listOf("cicd"), logger = logger)
+lateinit var service: Microservice
 
 fun main(inArgs: Array<String>) {
     // process input args
@@ -38,19 +50,14 @@ fun main(inArgs: Array<String>) {
     val localModeEnabled = args.containsKey("local")
 
     // only create service when not in local mode
-    service = Microservice(
-        MicroserviceConfig(
-            name = "CICD-Builder",
-            tags = listOf("cicd"),
-        ),
-        if (localModeEnabled) hashMapOf() else endpoints
-    )
+    service = Microservice(config, endpoints)
     service.start()
-    sleep(5000)
 
     // if in local mode, load config given path
     if (localModeEnabled) {
         buildConfig = JSONObject(File(args["local"]!!).readText())
+    } else {
+        service.broadcastRequestByTag("cicd", "builder_ready", JSONObject())
     }
 
     // keep alive for 10 seconds
@@ -64,73 +71,76 @@ fun main(inArgs: Array<String>) {
 }
 
 // function that runs the build
-var buildUploadDebug = true
+var buildUploadDebug = false
 fun runBuild(config: JSONObject) {
     // create and clear build directory
     val buildFolder = File(System.getProperty("user.dir"), "build")
     buildFolder.mkdirs()
+    var success = true
+
+    // delete old build
+    if (!buildUploadDebug) buildFolder.listFiles()?.forEach { it.deleteRecursively() }
 
     if (!buildUploadDebug) {
-        // delete old build
-        buildFolder.listFiles()?.forEach { it.deleteRecursively() }
-
         // clone the repo
         if (!config.has("url")) throw IllegalArgumentException("URL must be specified for clone")
+        val url = config.getString("url")
         val cloneResult = cloneGitRepo(buildFolder, config.getString("url"), config.optString("auth"))
-        if (cloneResult != 0) throw Exception("Clone operation failed, URL: ${config.getString("url")}, exit code: $cloneResult")
+        if (cloneResult != 0) {
+            println("Clone operation failed, URL: ${config.getString("url")}, exit code: $cloneResult")
+            success = false
+        }
+    }
 
+    if (success && !buildUploadDebug) {
         // run each command, verifying after each
         for (any in (config.optJSONArray("commands")
             ?: throw IllegalArgumentException("Commands to build must be specified"))) {
             val command = any as? String ?: throw IllegalArgumentException("Commands must be a string")
             val cmdResult = runCommand(buildFolder, command)
-            if (cmdResult != 0) throw Exception("Command $command could not be run, exited with code $cmdResult")
+            if (cmdResult != 0) {
+                println("Command $command could not be run, exited with code $cmdResult")
+                success = false
+            }
         }
     }
 
-    // for each resource, save it to the file system accordingly
-    config.optJSONArray("resources")?.forEach {
-        val resource = it as? String ?: throw IllegalArgumentException("Resource must be a string")
-        val resourceFile = File(buildFolder, resource)
-        if (!resourceFile.exists()) throw IllegalArgumentException("Resource $resource does not exist, searched at ${resourceFile.absolutePath}")
-        saveResource(resourceFile)
-    } ?: throw IllegalArgumentException("Resources must be specified")
+    // for each resource, save to zip file
+    val output = ByteArrayOutputStream()
+    if (success) {
+        try {
+            ZipOutputStream(output).use { zos ->
+                config.optJSONArray("resources")?.forEach {
+                    val resourceFile = File(
+                        buildFolder,
+                        it as? String ?: throw IllegalArgumentException("Resource must be a string")
+                    )
+                    if (!resourceFile.exists() || resourceFile.isDirectory)
+                        throw IllegalArgumentException("Resource ${resourceFile.name} does not exist or is a directory, searched at ${resourceFile.absolutePath}")
 
-    // catch errors from shutdown
-    try { service.dispose() } catch (ex: Exception) {}
-}
-
-// function to log and save a resource to the file system
-fun saveResource(resource: File) {
-    // file paths
-    val masterFolderPath = "/.builds/${resource.nameWithoutExtension}"
-    val metadataFilePath = "${masterFolderPath}/metadata.json"
-    val buildPath = "$masterFolderPath/$buildUUID"
-
-    // request metadata file
-    println("Request metadata file $metadataFilePath")
-    service.requestFile(metadataFilePath).get().let { file ->
-        // get json object from file
-        val metadata = file?.let { JSONObject(it.readText()) }
-            ?: JSONObject()
-
-        // update json
-        metadata.put(
-            buildUUID.toString(),
-            JSONObject()
-                .put("id", buildUUID)
-                .put("time", startTime)
-        )
-
-        // create temp file
-        val tempFile = File("tmp-${Random.nextInt(Int.MIN_VALUE, Int.MAX_VALUE)}.json")
-        tempFile.writeText(metadata.toString(4))
-
-        // push
-        println("Push file $metadataFilePath")
-        val pushResult = service.pushFile(metadataFilePath, tempFile).whenComplete { b, _ -> println("Success? $b") }.get()
-        println("Push result $pushResult")
+                    zos.putNextEntry(ZipEntry(resourceFile.name))
+                    zos.write(resourceFile.readBytes())
+                }
+            }
+        } catch (ex: Exception) { success = false }
     }
+
+    // assemble json object
+    val json = JSONObject().put("success", success).put("buildID", buildUUID)
+
+    if (success) {
+        val bytes = output.toByteArray()
+        File("tmp.zip").writeBytes(bytes)
+        json.put("result", Base64.getEncoder().encode(bytes))
+            .put("hash", HashUtils.getChecksumFromBytes(MessageDigest.getInstance("MD5"), bytes))
+    }
+
+    // broadcast build
+    service.broadcastRequestByTag("cicd", "build_result", json)
+    logger.info("Finished build with result ID: ${json["buildID"]} Success: ${json["success"]}")
+
+    // force shutdown
+    System.exit(0)
 }
 
 // function that runs the given command
