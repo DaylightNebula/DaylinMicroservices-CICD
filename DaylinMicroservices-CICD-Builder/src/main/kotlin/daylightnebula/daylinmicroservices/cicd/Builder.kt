@@ -39,7 +39,12 @@ val endpoints = hashMapOf<String, (json: JSONObject) -> JSONObject>(
     }
 )
 val logger = KotlinLogging.logger("CICD-Builder")
-val config = MicroserviceConfig(name = "CICD-Builder", tags = listOf("cicd"), logger = logger)
+val config = MicroserviceConfig(
+    name = "CICD-Builder",
+    tags = listOf("cicd"),
+    logger = logger,
+    consulUrl = "http://host.docker.internal:8500/"
+)
 lateinit var service: Microservice
 
 fun main(inArgs: Array<String>) {
