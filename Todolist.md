@@ -36,6 +36,7 @@
 - The job of this service is to detect when a build needs to be run and then run that build
 - [ ] Endpoint: Run build now (takes a name that references the build configurations)
   - [ ] Send back build key
+- [ ] Endpoint: Get all build possibilities
 - [ ] On build trigger
   - [ ] Spin up CICD-Builder
   - [ ] Use docker image of builder once builder is working right
