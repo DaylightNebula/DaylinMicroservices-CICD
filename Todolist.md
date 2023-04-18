@@ -3,10 +3,10 @@
 - [ ] Option: Url to pull from (if files:// is given, load file from that path, or if servicefs:// is given, load from file system)
 - [ ] Option: Command(s) to run build
 - [ ] Option: Auth token
-- [ ] Option: Path (or list of paths) to builds locally
-- [ ] Option: Local config path
+- [ ] Option: Path (or list of paths) to builds locally "resources"
+- [x] Option: Local config path
 - [ ] Option: Run build on startup
-  - [ ] If set true, run build on startup
+  - [x] If set true, run build on startup
   - [ ] If set false, broadcast that the builder is ready
 - [ ] Endpoint: Run build (with options above and a random key from the manager)
   - [ ] Send back a packet saying accepted
