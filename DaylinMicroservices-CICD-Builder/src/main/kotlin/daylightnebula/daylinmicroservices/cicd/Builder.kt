@@ -62,7 +62,7 @@ fun main(inArgs: Array<String>) {
     if (localModeEnabled) {
         buildConfig = JSONObject(File(args["local"]!!).readText())
     } else {
-        service.broadcastRequestByTag("cicd", "builder_ready", JSONObject())
+        service.broadcastRequestByTag("cicd", "builder_ready", JSONObject().put("service_id", config.uuid.toString()))
     }
 
     // keep alive for 10 seconds
